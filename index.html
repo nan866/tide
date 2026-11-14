@@ -158,15 +158,18 @@ function labelDate(ymd){ var a = ymd.split("-").map(Number); var w = "日月火�
 // 度.分 → 10進数（35.24 = 35度24分）
 function dm2dec(v){ var n = Number(v); if(!isFinite(n)) return NaN; var s = n < 0 ? -1 : 1; n = Math.abs(n); var d = Math.floor(n); var m = Math.round((n - d) * 10000) / 100; return s * (d + m / 60); }
 function prefName(pc){ return PREFS[pc-1] || ""; }
-function wxText(c){
-  c = Number(c);
-  if(c===0) return "☀️ 快晴"; if(c===1) return "🌤 晴れ"; if(c===2) return "⛅ 晴れ時々曇り"; if(c===3) return "☁️ 曇り";
-  if(c===45||c===48) return "🌫 霧"; if(c>=51&&c<=57) return "🌦 霧雨"; if(c===61||c===63) return "🌧 雨"; if(c===65) return "🌧 強い雨";
-  if(c===66||c===67) return "🌧 冷たい雨"; if(c>=71&&c<=77) return "🌨 雪"; if(c>=80&&c<=82) return "🌦 にわか雨"; if(c===85||c===86) return "🌨 にわか雪";
-  if(c===95) return "⛈ 雷雨"; if(c===96||c===99) return "⛈ 雷雨（ひょう）"; return "－";
-}
+// Open-Meteo の WMO 天気コード表（open-meteo.com/en/docs）の全29コード。97（激しい雷雨）も含む
+var WMO = {
+  0:"☀️ 快晴", 1:"🌤 晴れ", 2:"⛅ 一部曇り", 3:"☁️ 曇り", 45:"🌫 霧", 48:"🌫 霧（着氷）",
+  51:"🌦 弱い霧雨", 53:"🌦 霧雨", 55:"🌧 強い霧雨", 56:"🌧 弱い着氷性の霧雨", 57:"🌧 強い着氷性の霧雨",
+  61:"🌦 小雨", 63:"🌧 雨", 65:"🌧 強い雨", 66:"🌧 弱い着氷性の雨", 67:"🌧 強い着氷性の雨",
+  71:"🌨 弱い雪", 73:"🌨 雪", 75:"❄️ 強い雪", 77:"🌨 霧雪",
+  80:"🌦 弱いにわか雨", 81:"🌧 にわか雨", 82:"⛈ 激しいにわか雨", 85:"🌨 弱いにわか雪", 86:"❄️ 強いにわか雪",
+  95:"⛈ 雷雨", 96:"⛈ 雷雨（弱いひょう）", 97:"⛈ 激しい雷雨", 99:"⛈ 雷雨（強いひょう）"
+};
+function wxText(c){ c = Number(c); return Object.prototype.hasOwnProperty.call(WMO, c) ? WMO[c] : "－"; }
 function windCls(v){ v = Number(v); return v >= 8 ? "w-r" : (v >= 5 ? "w-o" : ""); }
-function dirText(deg){ var n = Number(deg); return isFinite(n) ? DIRS[Math.round(n/22.5) % 16] : "－"; }
+function dirText(deg){ var n = Number(deg); return isFinite(n) ? DIRS[Math.round((((n % 360) + 360) % 360) / 22.5) % 16] : "－"; }
 // 風が吹いていく向きに矢印を回す（↓が北風）
 function arrow(deg){ var n = Number(deg); if(!isFinite(n)) return ""; return '<span class="arrow" style="transform:rotate('+ (Math.round(n)+180)%360 +'deg)" aria-hidden="true">↑</span>'; }
 function windHTML(spd, deg){ return arrow(deg) + " " + esc(dirText(deg)) + ' <span class="'+windCls(spd)+'">' + esc(num(spd,1)) + "m/s</span>"; }
@@ -177,11 +180,12 @@ function fetchJSON(url){
   var t = setTimeout(function(){ if(ctl) ctl.abort(); }, 15000);
   return fetch(url, {signal: ctl ? ctl.signal : undefined, credentials:"omit", referrerPolicy:"no-referrer"})
     .then(function(r){
-      clearTimeout(t);
       if(r.status === 400) throw Err("range");
       if(!r.ok) throw Err("net", "HTTP " + r.status);
       return r.json().catch(function(){ throw Err("net", "bad json"); });
-    }, function(){ clearTimeout(t); throw Err("net"); });
+    }, function(){ throw Err("net"); })
+    // 本文の受信まで含めて15秒で打ち切る
+    .then(function(v){ clearTimeout(t); return v; }, function(e){ clearTimeout(t); throw e; });
 }
 
 // ---------- 取得（同じ日付・港は使い回す） ----------
@@ -279,7 +283,6 @@ function renderHome(){
   var els = SPOTS.map(function(sp, i){
     var el = document.createElement("div");
     el.className = "card"; el.setAttribute("role","button"); el.tabIndex = 0;
-    el.setAttribute("aria-label", sp.name + " の詳細を開く");
     el.innerHTML = '<div class="card-top"><h3>'+esc(sp.name)+'</h3><span class="tag" data-k="title">…</span></div>' +
       '<div class="src">潮位：'+esc(sp.port)+(sp.far ? "・"+esc(sp.far) : "")+'</div>' +
       '<div class="card-mid"><div class="tt" data-k="tt"><span class="loading">読み込み中…</span></div><div data-k="sp"></div></div>' +
